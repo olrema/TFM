@@ -1,0 +1,274 @@
+---
+title: "Microarray corteza entorrinal"
+author: "Olga Reyes"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, knitr.table.format = 'markdown')
+options(max.print=50000)
+
+```
+
+# LECTURA DE DATOS ORIGINALES 
+
+```{r}
+# dir.create("results")
+
+library(oligo)
+celFiles <- list.celfiles("./data", full.names=TRUE)
+
+library(Biobase)
+targets <- read.AnnotatedDataFrame(file.path("./data","targets.csv"),header=TRUE, row.names = 1, sep = ";")
+
+rawData <- read.celfiles (celFiles, phenoData=targets)
+
+colnames(rawData)<-targets@data$ShortName
+```
+
+# VISUALIZACIÓN DE DATOS:
+
+- Gráfico de densidad
+
+```{r}
+hist(rawData, main = "Gráfico de densidad", ylab= "Densidad", xlab="Log-densidad")
+```
+
+- Dendrograma
+
+```{r}
+distmeth <- c("euclidian")
+distan<-dist(t(exprs(rawData)), method=distmeth)
+treemeth <- c("average")
+hc <- hclust(distan,treemeth)
+plot (hc, hang=-1, main="Dendrograma jerárquico", ylab="Distancia", xlab="Muestras")
+```
+
+- PCA
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+plotPCA3 <- function (datos, labels, factor, title, scale,colores, size = 1.5, glineas = 0.25) {
+ data <- prcomp(t(datos),scale=scale)
+ # plot adjustments
+ dataDf <- data.frame(data$x)
+ Group <- factor
+ loads <- round(data$sdev^2/sum(data$sdev^2)*100,1)
+ # main plot
+ p1 <- ggplot(dataDf,aes(x=PC1, y=PC2)) +
+   theme_classic() +
+   geom_hline(yintercept = 0, color = "gray70") +
+   geom_vline(xintercept = 0, color = "gray70") +
+   geom_point(aes(color = Group), alpha = 0.55, size = 3) +
+   coord_cartesian(xlim = c(min(data$x[,1])-5,max(data$x[,1])+5)) +
+   scale_fill_discrete(name = "Group")
+ # avoiding labels superposition
+ p1 + geom_text_repel(aes(y = PC2 + 0.25, label = labels),segment.size = 0.25, size = size) + 
+   labs(x = c(paste("PC1",loads[1],"%")),y=c(paste("PC2",loads[2],"%"))) +  
+   ggtitle(paste("Análisis de componente principal: ",title,sep=" "))+ 
+   theme(plot.title = element_text(hjust = 0.5)) +
+   scale_color_manual(values=colores)
+}
+
+plotPCA3(exprs(rawData), labels = targets$ShortName, factor = targets$Group, 
+          title="Datos crudos", scale = FALSE, size = 3, 
+          colores = c("#b4bfda", "lightblue", "#9595ef", "#7887AB"))
+```
+
+- Diagrama de cajas 
+
+```{r}
+boxplot(rawData, cex.axis=0.5, las=2,  which="all", 
+          col = c(rep("#b4bfda", 7), rep("lightblue", 7), rep("lavender", 7), rep("#7887AB", 6)),
+          main="Distribución de valores de intensidad crudos")
+```
+
+# CONTROL DE CALIDAD DE LOS DATOS CRUDOS:
+
+
+```{r,include=F, eval=T}
+# instalación paquete bioconductor arrayQualityMetrics
+library(arrayQualityMetrics)
+arrayQualityMetrics(rawData, outdir=file.path("./results", "QCDir.Raw"), force=TRUE)
+```
+
+# NORMALIZACIÓN
+
+```{r}
+eset_rma <- rma (rawData)
+```
+
+# VISUALIZACIÓN DE DATOS NORMALIZADO
+
+- Gráfico de densidad
+
+```{r}
+hist(eset_rma, main = "Gráfico de densidad", ylab= "Densidad", xlab="Log-densidad")
+```
+
+- PCA
+
+```{r}
+plotPCA3(exprs(eset_rma), labels = targets$ShortName, factor = targets$Group, 
+          title="Datos normalizados", scale = FALSE, size = 3, 
+          colores = c("#b4bfda", "lightblue", "#9595ef", "#7887AB"))
+```
+
+- Diagrama de cajas
+```{r}
+boxplot(eset_rma, cex.axis=0.5, las=2,  which="all", 
+          col = c(rep("#b4bfda", 7), rep("lightblue", 7), rep("lavender", 7), rep("#7887AB", 7)),
+          main="Distribución de valores de intensidad normalizados")
+```
+
+# CONTROL DE CALIDAD DE LOS DATOS NORMALIZADOS:
+
+```{r, eval=T}
+library(arrayQualityMetrics)
+arrayQualityMetrics(eset_rma, outdir=file.path("./results", "QCDir.Norm"), force=TRUE)
+```
+
+# DETECCIÓN DE GENES MÁS VARIABLES
+
+```{r}
+sds <- apply (exprs(eset_rma), 1, sd)
+sdsO<- sort(sds)
+plot(1:length(sdsO), sdsO, main="Distribución de la variabilidad génica",
+    xlab="Índice genético (de menos variable a más)", ylab="Desviación estándar", axes=FALSE)
+abline(v=length(sds)*c(0.9,0.95))
+abline(h=0.5, lty=3, col="#7887AB")
+axis(2, at=seq(0, 4, by=0.5))
+axis(1, at=seq(0, 60000, by=10000))
+
+# Vertical lines represent 90% and 95% percentiles
+```
+
+# FILTRAJE NO ESPECÍFICO
+
+```{r}
+library (genefilter)
+library (hgu133plus2.db)
+annotation (eset_rma) <- 'hgu133plus2.db'
+filtered <- nsFilter (eset_rma, require.entrez = TRUE, remove.dupEntrez = TRUE, var.filter = TRUE, var.func = IQR, var.cutoff=0.5,filterByQuantile = TRUE, feature.exclude = "^AFFX")
+
+filtered$filter.log
+eset_filtered <-filtered$eset
+```
+
+
+```{r resultado_filtraje}
+# Num genes antes del filtraje
+eset_rma
+# Num genes despues del filtraje
+eset_filtered
+```
+
+GUARDADO DATOS NORMALIZADOS
+
+```{r guardado, eval=T}
+# Guardado de los datos obtenidos hasta ahora.
+write.csv(exprs(eset_rma), file="./results/normalized.Data.csv")
+write.csv(exprs(eset_filtered), file="./results/normalized.Filtered.Data.csv")
+save(eset_rma, eset_filtered, file="./results/normalized.Data.Rda")
+```
+
+# MATRIZ DE DISEÑO 
+
+```{r}
+library(limma)
+if (!exists("eset_filtered")) load (file="./results/normalized.Data.Rda")
+designMat<- model.matrix(~0+Group, pData(eset_filtered))
+colnames(designMat) <- c("FEM.AD","FEM.CT","MALE.AD","MALE.CT")
+designMat
+```
+
+# MATRIZ DE CONTRASTES
+
+```{r comparaciones}
+cont.matrix <- makeContrasts (FEMvsMALE.CT = FEM.CT-MALE.CT,
+                              FEMvsMALE.AD = FEM.AD-MALE.AD, 
+                              #INT = (FEM.CT-MALE.CT) - (FEM.AD-MALE.AD),          
+                              levels=designMat)
+cont.matrix
+```
+
+# SELECCIÓN DE GENES
+
+```{r}
+library(limma)
+fit<-lmFit(eset_filtered, designMat)
+fit.main<-contrasts.fit(fit, cont.matrix)
+fit.main<-eBayes(fit.main)
+```
+
+```{r}
+tab_FEMvsMALE.CT <- topTable (fit.main, number=nrow(fit.main), coef="FEMvsMALE.CT", adjust='fdr')
+knitr::kable(head(tab_FEMvsMALE.CT),caption="Genes que cambian su expresión en ratones infectados según si son knock out para el gen MyD88 o no.", booktabs=TRUE, align='c')
+
+tab_FEMvsMALE.AD <- topTable (fit.main, number=nrow(fit.main), coef="FEMvsMALE.AD", adjust='fdr')
+knitr::kable(head(tab_FEMvsMALE.AD),caption="Genes que cambian su expresión en ratones no infectados según si son knock out para el gen MyD88 o no.", booktabs=TRUE, align='c')
+```
+
+```{r}
+geneSymbols <- select(hgu133plus2.db, rownames(fit.main), c("SYMBOL"))
+SYMBOLS<- geneSymbols$SYMBOL
+volcanoplot(fit.main, coef="FEMvsMALE.CT", highlight=4, names=SYMBOLS, 
+             main=paste("Genes expresados diferencialmente", colnames(cont.matrix)[1], sep="\n"), pch='.',adj=0.5)
+abline(v=c(-1,1))
+
+volcanoplot(fit.main, coef="FEMvsMALE.AD", highlight=4, names=SYMBOLS, 
+             main=paste("Genes expresados diferencialmente", colnames(cont.matrix)[2], sep="\n"),pch='.',adj=0.5)
+abline(v=c(-1,1))
+```
+
+# ANOTACIÓN
+
+```{r}
+annotatedTopTable <- function(topTab, anotPackage)
+{topTab <- cbind(PROBEID=rownames(topTab), topTab)
+myProbes <- rownames(topTab)
+thePackage <- eval(parse(text = anotPackage))
+geneAnots <- select(thePackage, myProbes, c("SYMBOL", "GENENAME", "ENTREZID"))
+annotatedTopTab<- merge(x=geneAnots, y=topTab, by.x="PROBEID", by.y="PROBEID")
+return(annotatedTopTab)
+}
+
+topAnnotated_FEMvsMALE.CT <- annotatedTopTable(tab_FEMvsMALE.CT,
+anotPackage="hgu133plus2.db")
+topAnnotated_FEMvsMALE.AD <- annotatedTopTable(tab_FEMvsMALE.AD,
+anotPackage="hgu133plus2.db")
+
+knitr::kable(head(topAnnotated_FEMvsMALE.CT[,-(3:4)]),caption="Anotación de los genes que cambian su expresión en ratones infectados.", booktabs=TRUE, align='c')
+
+knitr::kable(head(topAnnotated_FEMvsMALE.AD[,-(3:4)]),caption="Anotación de los genes que cambian su expresión en ratones no infectados.", booktabs=TRUE, align='c')
+```
+
+GUARDADO DE TABLAS
+
+```{r, eval=T}
+write.csv(topAnnotated_FEMvsMALE.CT, file="./results/topAnnotated_FEMvsMALE.CT.csv")
+write.csv(topAnnotated_FEMvsMALE.AD, file="./results/topAnnotated_FEMvsMALE.AD.csv")
+#write.csv(topAnnotated_INT, file="./results/topAnnotated_INT.csv")
+```
+
+# COMPARACIÓN MÚLTIPLE
+
+```{r}
+res<-decideTests(fit.main, method="separate", adjust.method="fdr", p.value=0.1, lfc=1)
+
+sum.res.rows<-apply(abs(res),1,sum)
+res.selected<-res[sum.res.rows!=0,]
+
+knitr::kable(summary(res),caption="Resumen de la comparación múltiple.", booktabs=TRUE, align='c')
+```
+
+```{r}
+vennDiagram (res.selected[,1:2], cex=0.65,adj=0.5, cex.main=0.75, main="Genes en común entre las 3 comparaciones")
+```
+
