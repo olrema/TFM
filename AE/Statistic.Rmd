@@ -1,0 +1,353 @@
+---
+title: "Análisis estadístico"
+author: "Olga Reyes"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, knitr.table.format = 'markdown')
+options(max.print=100)
+```
+
+## Datos
+
+```{r}
+# Importación de datos 
+clinic_data<- read.csv("./DC_finales.csv",header=T,sep=";",stringsAsFactors = T)
+# Idea de la tabla de datos
+knitr::kable(head(clinic_data))
+# Variables seleccionadas
+names(clinic_data)
+```
+
+
+```{r}
+# tipo de variable
+str(clinic_data) 
+
+# NAs?
+any(is.null(clinic_data))
+any(is.na(clinic_data))
+clinic_data <- na.omit(clinic_data)
+any(is.na(clinic_data))
+
+# Resumen
+summary(clinic_data)
+
+# Dimensiones de los datos
+dim(clinic_data)
+```
+
+## Exploración general de los datos  
+
+```{r}
+# Proporción de hombres y mujeres
+knitr::kable(table(clinic_data$PTGENDER))
+
+# Individuo más grande
+edad_max<-max(clinic_data$AGE)
+edad_max_RID<-clinic_data$RID[clinic_data$AGE==edad_max]
+knitr::kable(clinic_data[clinic_data$RID==edad_max_RID,])
+
+# Individuo más pequeño
+edad_min<-min(clinic_data$AGE)
+edad_min_RID<-clinic_data$RID[clinic_data$AGE==edad_min]
+knitr::kable(clinic_data[clinic_data$RID==edad_min_RID,])
+
+
+# Media de edad de las mujeres del estudio 
+edad_muj<-clinic_data$AGE[clinic_data$PTGENDER=="1"]
+mean(edad_muj)
+
+# Media de edad de los hombres del estudio 
+edad_hom<-clinic_data$AGE[clinic_data$PTGENDER=="0"]
+mean(edad_hom)
+
+
+# Proporción de hombres y mujeres según la cantidad de alelos APOE4
+prop_apoe4 <- table(clinic_data$PTGENDER,clinic_data$APOE4)
+knitr::kable(prop_apoe4)
+
+
+# Proporción de hombres y mujeres según el estado civil
+prop_marry <- table(clinic_data$PTGENDER,clinic_data$PTMARRY)
+knitr::kable(prop_marry)
+
+
+# Media de años de educación de las mujeres del estudio 
+educ_muj <- clinic_data$PTEDUCAT[clinic_data$PTGENDER=="1"]
+mean(educ_muj)
+
+# Media de años de educación de los hombres del estudio 
+educ_hom<- clinic_data$PTEDUCAT[clinic_data$PTGENDER=="0"]
+mean(educ_hom)
+
+
+# cerebro mayor
+WB_max<-max(clinic_data$WholeBrain_bl)
+RID_WB_max<-clinic_data$RID[clinic_data$WholeBrain_bl==WB_max]
+knitr::kable(clinic_data[clinic_data$RID==RID_WB_max,])
+
+# cerebro menor 
+WB_min<-min(clinic_data$WholeBrain_bl)
+RID_WB_min<-clinic_data$RID[clinic_data$WholeBrain_bl==WB_min]
+knitr::kable(clinic_data[clinic_data$RID==RID_WB_min,])
+
+# Hipocampo mayor
+Hip_max<-max(clinic_data$Hippocampus_bl)
+RID_Hip_max<-clinic_data$RID[clinic_data$Hippocampus_bl==Hip_max]
+knitr::kable(clinic_data[clinic_data$RID==RID_Hip_max,])
+
+# Hipocampo menor
+Hip_min<-min(clinic_data$Hippocampus_bl)
+RID_Hip_min<-clinic_data$RID[clinic_data$Hippocampus_bl==Hip_min]
+knitr::kable(clinic_data[clinic_data$RID==RID_Hip_min,])
+
+#corteza mayor
+cort_min<-min(clinic_data$Entorhinal_bl)
+RID_cort_min<-clinic_data$RID[clinic_data$Entorhinal_bl==cort_min]
+knitr::kable(clinic_data[clinic_data$RID==RID_cort_min,])
+
+#corteza menor
+cort_max<-max(clinic_data$Entorhinal_bl)
+RID_cort_max<-clinic_data$RID[clinic_data$Entorhinal_bl==cort_max]
+knitr::kable(clinic_data[clinic_data$RID==RID_cort_max,])
+```
+
+## Análisis descriptivo
+
+```{r}
+# Proporción de individuos de cada sexo 
+freq_gen<-barplot (prop.table(table(clinic_data$PTGENDER)),  main="Frecuencia relativa de individuos", xlab="Género", ylab="Frecuencia relativa", names=c("Hombres","Mujeres"), col=c("#7887AB","#b4bfda"), ylim=c(0, 0.6))
+
+
+
+# Edad
+boxplot(AGE~PTGENDER,data=clinic_data, main="Edad (años)", xlab="Género", ylab="Edad", names=c("Hombres","Mujeres"), col=c("#7887AB","#b4bfda"))
+
+
+
+# Educación 
+boxplot(PTEDUCAT~PTGENDER, data=clinic_data, main="Educación (años)", xlab="Género", ylab="Años de educación", names=c("Hombres","Mujeres"), col=c("#7887AB","#b4bfda"))
+
+
+
+# Frecuencia relativa de cada estado civil
+civil<-table(clinic_data$PTMARRY)
+civil<- prop.table(civil)
+pie(civil, col = c("#b4bfda", "lightblue", "lavender", "#7887AB"), main="Frecuencia relativa de cada estado civil", labels=c("","","",""))
+legend(x = "topright", legend = c( "Casado/a","Divorciado/a", "Nunca casado/a", "Viudo/a"), fill = c("#b4bfda", "lightblue", "lavender", "#7887AB"))
+
+
+
+# Estado civil
+barplot(prop_marry, col=c("#7887AB","#b4bfda"), xlab="Estado civil", ylab="Frecuencia", main= "Estado civil", beside=TRUE, names=c("Casado/a","Divorciado/a","Nunca casado/a", "Viudo/a"))
+legend(x = "topright", legend = c("Hombres","Mujeres"), fill = c("#7887AB","#b4bfda"))
+
+
+
+# Freq relativa de APOE4
+apoe<-table(clinic_data$APOE4)
+apoe<- prop.table(apoe)
+pie(apoe, col = c("lavender", "#7887AB", "#b4bfda"), main="Frecuencia relativa de la cantidad de alelos APOE4", labels=c("","","",""))
+legend(x = "topright", legend = c("0", "1", "2"), fill = c("lavender", "#7887AB", "#b4bfda"))
+
+
+# APOE4
+barplot(prop_apoe4, col=c("#7887AB","#b4bfda"), xlab="Número de alelos APOE4", ylab="Frecuencia", main= "Número de alelos APOE4", beside=TRUE)
+legend(x = "topright", legend = c("Hombres","Mujeres"), fill = c("#7887AB","#b4bfda"))
+
+
+# Tamaño cerebral 
+boxplot(WholeBrain_bl~PTGENDER,data=clinic_data, main="Volumen cerebral", xlab="Género", ylab="Volumen cerebral (mm3)", names=c("Hombres","Mujeres"), col=c("#7887AB","#b4bfda"))
+
+# Tamaño hipocampo
+boxplot(Hippocampus_bl~PTGENDER,data=clinic_data, main="Volumen hipocampo", xlab="Género", ylab="Volumen hipocampo (mm3)", names=c("Hombres","Mujeres"), col=c("#7887AB","#b4bfda"))
+
+# Tamaño ventrículos
+boxplot(Ventricles_bl~PTGENDER,data=clinic_data, main="Volumen ventrículos", xlab="Género", ylab="Volumen ventrículos (mm3)", names=c("Hombres","Mujeres"), col=c("#7887AB","#b4bfda"))
+
+# Tamaño cortex entorrinal
+boxplot(Entorhinal_bl~PTGENDER,data=clinic_data, main="Volumen corteza entorrinal", xlab="Género", ylab="Volumen corteza entorrinal (mm3)", names=c("Hombres","Mujeres"), col=c("#7887AB","#b4bfda"))
+```
+
+
+## Análisis de regresión lineal simple
+
+```{r}
+library("Rcmdr")
+scatterplot (AGE~Hippocampus_bl, regLine=T,smooth=F, boxplots=F,data=clinic_data, ylab="Edad (años)", xlab="Volumen de hipocampo (mm3)")
+```
+
+
+```{r}
+knitr::kable(cor (clinic_data[,c("AGE","Hippocampus_bl")]))
+```
+
+
+```{r}
+reg <- lm(Hippocampus_bl~AGE, clinic_data)
+summary(reg)
+```
+
+## Análisis de regresión lineal múltiple
+
+```{r}
+cor(clinic_data[sapply(clinic_data,is.numeric)])
+```
+
+
+```{r}
+regmu <- lm (clinic_data$Hippocampus_bl ~ clinic_data$RID+clinic_data$AGE+clinic_data$PTGENDER+clinic_data$PTEDUCAT+clinic_data$APOE4+clinic_data$Ventricles_bl+clinic_data$WholeBrain_bl+clinic_data$Entorhinal_bl+clinic_data$PTMARRY)
+summary(regmu)
+```
+
+
+
+```{r}
+step(regmu,direction="both",trace=1)
+```
+
+
+```{r}
+regmufinal <- lm(formula = clinic_data$Hippocampus_bl ~ clinic_data$AGE + clinic_data$PTEDUCAT + 
+     clinic_data$APOE4 + clinic_data$WholeBrain_bl + clinic_data$Entorhinal_bl)
+summary(regmufinal)
+```
+
+
+____________________
+
+## CONTRASTE - hipocampo
+
+
+**1.independencia**
+
+
+```{r}
+anova_hip<-aov(clinic_data$Hippocampus_bl~clinic_data$PTGENDER ,data=clinic_data) 
+plot(anova_hip$residuals, main="Independencia")
+```
+Como vemos, el supuesto de independencia se cumple. 
+
+**2. Normalidad**
+
+Como la muestra es superior a 50 observaciones se realizará un test de Kolmogorov-Smirnov.
+
+```{r}
+qqnorm(anova_hip$residuals) 
+qqline(anova_hip$residuals)
+
+ks.test(x = anova_hip$residuals,"pnorm", mean(anova_hip$residuals), sd(anova_hip$residuals))
+```
+
+
+```{r}
+wilcox.test(x = clinic_data$PTGENDER, y = clinic_data$Hippocampus_bl, alternative = "two.sided", mu = 0,
+            paired = FALSE, conf.int = 0.95)
+```
+
+
+## CONTRASTE - WholeBrain 
+
+
+**1. Independencia**
+```{r}
+anova_brain<-aov(clinic_data$WholeBrain_bl~clinic_data$PTGENDER,data=clinic_data) 
+plot(anova_brain$residuals, main="Independencia")
+```
+
+Se cumple independencia. 
+
+**2.Normalidad**
+```{r}
+qqnorm(anova_brain$residuals) 
+qqline(anova_brain$residuals)
+```
+
+```{r}
+ks.test(x = anova_brain$residuals,"pnorm", mean(anova_brain$residuals), sd(anova_brain$residuals))
+```
+
+El p-valor es superior a 0,05, por lo que se acepta la normalidad de los datos. 
+
+**3. Homocedasticidad**
+
+```{r}
+leveneTest(clinic_data$WholeBrain_bl,clinic_data$PTGENDER)
+```
+
+p-valor inferior a 0,05, por lo que no hay homocedasticidad.
+
+t.test para varianzas separadas: 
+
+```{r}
+ t.test(clinic_data$WholeBrain_bl,clinic_data$PTGENDER,var.equal=F) 
+```
+
+
+## CONTRASTE - ventricles
+
+**1. Independencia**
+```{r}
+anova_vent<-aov(clinic_data$Ventricles_bl~clinic_data$PTGENDER ,data=clinic_data) 
+plot(anova_vent$residuals, main="Independencia")
+```
+Son independientes. 
+
+**2. Normalidad**
+```{r}
+qqnorm(anova_vent$residuals) 
+qqline(anova_vent$residuals)
+
+ks.test(x = anova_vent$residuals,"pnorm", mean(anova_vent$residuals), sd(anova_vent$residuals))
+```
+
+Datos normales
+
+**3. Homogeneidad**
+```{r}
+leveneTest(clinic_data$Ventricles_bl,clinic_data$PTGENDER)
+```
+
+p-valor inferior a 0,05, por lo que no hay homocedasticidad.
+
+t.test para varianzas separadas:
+
+```{r}
+t.test(clinic_data$Ventricles_bl,clinic_data$PTGENDER,var.equal=F)
+```
+
+## CONTRASTE - CE
+
+**1. Independencia**
+```{r}
+anova_ce<-aov(clinic_data$Entorhinal_bl~clinic_data$PTGENDER ,data=clinic_data) 
+plot(anova_ce$residuals, main="Independencia")
+```
+Son independientes. 
+
+**2. Normalidad**
+```{r}
+qqnorm(anova_ce$residuals) 
+qqline(anova_ce$residuals)
+
+ks.test(x = anova_ce$residuals,"pnorm", mean(anova_ce$residuals), sd(anova_ce$residuals))
+```
+Datos normales
+
+**3. Homogeneidad**
+```{r}
+leveneTest(clinic_data$Entorhinal_bl,clinic_data$PTGENDER)
+```
+
+
+```{r}
+t.test(clinic_data$Ventricles_bl,clinic_data$PTGENDER,var.equal=T)
+```
+
