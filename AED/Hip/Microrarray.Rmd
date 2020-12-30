@@ -1,0 +1,392 @@
+---
+title: "Microarrau hipocampo"
+author: "Olga Reyes"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE, knitr.table.format = 'markdown')
+options(max.print=50000)
+
+```
+
+# LECTURA DE DATOS ORIGINALES
+
+```{r}
+# dir.create("results")
+
+library(oligo)
+celFiles <- list.celfiles("./data1", full.names=TRUE)
+
+library(Biobase)
+targets <- read.AnnotatedDataFrame(file.path("./data1","targets.csv"),header=TRUE, row.names = 1, sep = ";")
+
+rawData <- read.celfiles (celFiles, phenoData=targets)
+
+colnames(rawData)<-targets@data$ShortName
+```
+
+# VISUALIZACIÓN DE DATOS
+
+- Gráfico de densidad
+
+```{r}
+hist(rawData, main = "Gráfico de densidad", ylab= "Densidad", xlab="Log-densidad")
+```
+
+- Dendrograma
+
+```{r}
+distmeth <- c("euclidian")
+distan<-dist(t(exprs(rawData)), method=distmeth)
+treemeth <- c("average")
+hc <- hclust(distan,treemeth)
+plot (hc, hang=-1, main="Dendrograma jerárquico", ylab="Distancia", xlab="Muestras")
+```
+
+- PCA 
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+plotPCA3 <- function (datos, labels, factor, title, scale,colores, size = 1.5, glineas = 0.25) {
+ data <- prcomp(t(datos),scale=scale)
+ # plot adjustments
+ dataDf <- data.frame(data$x)
+ Group <- factor
+ loads <- round(data$sdev^2/sum(data$sdev^2)*100,1)
+ # main plot
+ p1 <- ggplot(dataDf,aes(x=PC1, y=PC2)) +
+   theme_classic() +
+   geom_hline(yintercept = 0, color = "gray70") +
+   geom_vline(xintercept = 0, color = "gray70") +
+   geom_point(aes(color = Group), alpha = 0.55, size = 3) +
+   coord_cartesian(xlim = c(min(data$x[,1])-5,max(data$x[,1])+5)) +
+   scale_fill_discrete(name = "Group")
+ # avoiding labels superposition
+ p1 + geom_text_repel(aes(y = PC2 + 0.25, label = labels),segment.size = 0.25, size = size) + 
+   labs(x = c(paste("PC1",loads[1],"%")),y=c(paste("PC2",loads[2],"%"))) +  
+   ggtitle(paste("Análisis de componente principal: ",title,sep=" "))+ 
+   theme(plot.title = element_text(hjust = 0.5)) +
+   scale_color_manual(values=colores)
+}
+
+plotPCA3(exprs(rawData), labels = targets$ShortName, factor = targets$Group, 
+          title="Datos crudos", scale = FALSE, size = 3, 
+          colores = c("#b4bfda", "lightblue", "#9595ef", "#7887AB"))
+```
+
+- Diagrama de cajas 
+
+```{r}
+boxplot(rawData, cex.axis=0.5, las=2,  which="all", 
+          col = c(rep("#b4bfda", 9), rep("lightblue", 9), rep("lavender", 9), rep("#7887AB", 9)),
+          main="Distribución de valores de intensidad crudos")
+```
+
+# CONTROL DE CALIDAD DE LOS DATOS CRUDOS
+
+```{r,include=F, eval=T}
+# instalación paquete bioconductor arrayQualityMetrics
+library(arrayQualityMetrics)
+arrayQualityMetrics(rawData, outdir=file.path("./results", "QCDir.Raw"), force=TRUE)
+```
+
+# LECTURA DE MUESTRAS DEFINITIVAS
+
+```{r}
+celFiles <- list.celfiles("./data", full.names=TRUE)
+
+targets <- read.AnnotatedDataFrame(file.path("./data","targets.csv"),header=TRUE, row.names = 1, sep = ";")
+
+rawData <- read.celfiles (celFiles, phenoData=targets)
+
+colnames(rawData)<-targets@data$ShortName
+```
+
+# NORMALIZACIÓN
+```{r}
+eset_rma <- rma (rawData)
+```
+
+# VISUALIZACIÓN DATOS NORMALIZADOS
+
+- Gráfico de densidad
+
+```{r}
+hist(eset_rma, main = "Gráfico de densidad", ylab= "Densidad", xlab="Log-densidad")
+```
+
+- PCA
+
+```{r}
+plotPCA3(exprs(eset_rma), labels = targets$ShortName, factor = targets$Group, 
+          title="Datos normalizados", scale = FALSE, size = 3, 
+          colores = c("#b4bfda", "lightblue", "#9595ef", "#7887AB"))
+```
+
+- Diagrama de cajas
+
+```{r}
+boxplot(eset_rma, cex.axis=0.5, las=2,  which="all", 
+          col = c(rep("#b4bfda", 9), rep("lightblue", 9), rep("lavender", 9), rep("#7887AB", 9)),
+          main="Distribución de valores de intensidad normalizados")
+```
+
+# CONTROL DE CALIDAD DE LOS DATOS NORMALIZADOS
+
+```{r, eval=T}
+library(arrayQualityMetrics)
+arrayQualityMetrics(eset_rma, outdir=file.path("./results", "QCDir.Norm"), force=TRUE)
+```
+
+# DETECCIÓN DE GENES MÁS VARIABLES
+
+```{r}
+sds <- apply (exprs(eset_rma), 1, sd)
+sdsO<- sort(sds)
+plot(1:length(sdsO), sdsO, main="Distribución de la variabilidad génica",
+    xlab="Índice genético (de menos variable a más)", ylab="Desviación estándar", axes=FALSE)
+abline(v=length(sds)*c(0.9,0.95))
+abline(h=0.5, lty=3, col="#7887AB")
+axis(2, at=seq(0, 4, by=0.5))
+axis(1, at=seq(0, 60000, by=10000))
+
+# Vertical lines represent 90% and 95% percentiles
+```
+
+# FILTRAJE NO ESPECÍFICO
+
+```{r}
+library (genefilter)
+library (hgu133plus2.db)
+annotation (eset_rma) <- 'hgu133plus2.db'
+filtered <- nsFilter (eset_rma, require.entrez = TRUE, remove.dupEntrez = TRUE, var.filter = TRUE, var.func = IQR, var.cutoff=0.5,filterByQuantile = TRUE, feature.exclude = "^AFFX")
+
+filtered$filter.log
+eset_filtered <-filtered$eset
+```
+
+
+```{r resultado_filtraje}
+# Num genes antes del filtraje
+eset_rma
+# Num genes despues del filtraje
+eset_filtered
+```
+
+GUARDADO DATOS NORMALIZADOS
+
+```{r guardado, eval=T}
+# Guardado de los datos obtenidos hasta ahora.
+write.csv(exprs(eset_rma), file="./results/normalized.Data.csv")
+write.csv(exprs(eset_filtered), file="./results/normalized.Filtered.Data.csv")
+save(eset_rma, eset_filtered, file="./results/normalized.Data.Rda")
+```
+
+# MATRIZ DE DISEÑO 
+
+```{r}
+library(limma)
+if (!exists("eset_filtered")) load (file="./results/normalized.Data.Rda")
+designMat<- model.matrix(~0+Group, pData(eset_filtered))
+colnames(designMat) <- c("FEM.AD","FEM.CT","MALE.AD","MALE.CT")
+designMat
+```
+
+# MATRIZ DE CONTRASTES
+
+```{r comparaciones}
+cont.matrix <- makeContrasts (FEMvsMALE.CT = FEM.CT-MALE.CT,
+                              FEMvsMALE.AD = FEM.AD-MALE.AD, 
+                              #INT = (FEM.CT-MALE.CT) - (FEM.AD-MALE.AD),          
+                              levels=designMat)
+cont.matrix
+```
+
+# SLECCIÓN DE GENES
+
+```{r}
+library(limma)
+fit<-lmFit(eset_filtered, designMat)
+fit.main<-contrasts.fit(fit, cont.matrix)
+fit.main<-eBayes(fit.main)
+```
+
+```{r}
+tab_FEMvsMALE.CT <- topTable (fit.main, number=nrow(fit.main), coef="FEMvsMALE.CT", adjust='fdr')
+knitr::kable(head(tab_FEMvsMALE.CT),caption="Genes que cambian su expresión en pacientes control según su sexo.", booktabs=TRUE, align='c')
+
+tab_FEMvsMALE.AD <- topTable (fit.main, number=nrow(fit.main), coef="FEMvsMALE.AD", adjust='fdr')
+knitr::kable(head(tab_FEMvsMALE.AD),caption="Genes que cambian su expresión en pacientes con Alzheimer según su sexo", booktabs=TRUE, align='c')
+```
+
+- Volcano plots
+
+```{r}
+geneSymbols <- select(hgu133plus2.db, rownames(fit.main), c("SYMBOL"))
+SYMBOLS<- geneSymbols$SYMBOL
+volcanoplot(fit.main, coef="FEMvsMALE.CT", highlight=4, names=SYMBOLS, 
+             main=paste("Genes expresados diferencialmente en pacientes control", colnames(cont.matrix)[1], sep="\n"), pch='.',adj=0.5)
+abline(v=c(-1,1))
+
+volcanoplot(fit.main, coef="FEMvsMALE.AD", highlight=5, names=SYMBOLS, 
+             main=paste("Genes expresados diferencialmente en pacientes con Alzheimer", colnames(cont.matrix)[2], sep="\n"),pch='.',adj=0.5)
+abline(v=c(-1,1))
+```
+
+# ANOTACIÓN
+
+```{r}
+annotatedTopTable <- function(topTab, anotPackage)
+{topTab <- cbind(PROBEID=rownames(topTab), topTab)
+myProbes <- rownames(topTab)
+thePackage <- eval(parse(text = anotPackage))
+geneAnots <- select(thePackage, myProbes, c("SYMBOL", "GENENAME", "ENTREZID"))
+annotatedTopTab<- merge(x=geneAnots, y=topTab, by.x="PROBEID", by.y="PROBEID")
+return(annotatedTopTab)
+}
+
+topAnnotated_FEMvsMALE.CT <- annotatedTopTable(tab_FEMvsMALE.CT,
+anotPackage="hgu133plus2.db")
+topAnnotated_FEMvsMALE.AD <- annotatedTopTable(tab_FEMvsMALE.AD,
+anotPackage="hgu133plus2.db")
+
+knitr::kable(head(topAnnotated_FEMvsMALE.CT[,-(3:4)]),caption="Anotación de los genes que cambian su expresión en individuos control.", booktabs=TRUE, align='c')
+
+knitr::kable(head(topAnnotated_FEMvsMALE.AD[,-(3:4)]),caption="Anotación de los genes que cambian su expresión en individuos enfermos.", booktabs=TRUE, align='c')
+```
+
+GUARDADO DE TABLAS ANOTADAS
+
+```{r, eval=T}
+write.csv(topAnnotated_FEMvsMALE.CT, file="./results/topAnnotated_FEMvsMALE.CT.csv")
+write.csv(topAnnotated_FEMvsMALE.AD, file="./results/topAnnotated_FEMvsMALE.AD.csv")
+```
+
+# COMPARACIÓN MÚLTIPLE
+
+```{r}
+res<-decideTests(fit.main, method="separate", adjust.method="fdr", p.value=0.05, lfc=1)
+
+sum.res.rows<-apply(abs(res),1,sum)
+res.selected<-res[sum.res.rows!=0,]
+
+knitr::kable(summary(res),caption="Resumen de la comparación múltiple.", booktabs=TRUE, align='c')
+```
+
+- Diagrama de Venn
+
+```{r}
+vennDiagram (res.selected[,1:2], cex=0.65,adj=0.5, cex.main=0.75, main="Genes en común entre las 2 comparaciones")
+```
+
+# HEATMAP
+
+```{r}
+probeNames <- rownames(res.selected)
+HMdata <- exprs(eset_filtered)[rownames(exprs(eset_filtered)) %in% probeNames,]
+ 
+geneSymbols <- select(hgu133plus2.db, rownames(HMdata), c("SYMBOL"))
+rownames(HMdata) <- geneSymbols$SYMBOL
+```
+
+- Guardado de datos del Heatmap
+
+```{r guardado_heatmap,echo=T,eval=T}
+write.csv(HMdata, file = file.path("./results/data4Heatmap.csv"))
+```
+
+```{r}
+colorMap<- colorRampPalette(c("lightpink", "blue"))(n = 299)
+library(gplots)
+par(cex.main=0.75, cex=0.75)
+heatmap.2(HMdata,
+          main = "Genes diferencialmente expresados",
+          col = colorMap,
+          density.info = "histogram",
+          ColSideColors = c(rep("#b4bfda",9),rep("lightblue",9), rep("lavender",8), rep("#7887AB",9)),
+          scale = "row",
+          tracecol = NULL,
+          Rowv = FALSE)
+```
+
+
+# CLASIFICACIÓN Y AGRUPACIÓN 
+
+```{r}
+library(clusterProfiler)
+library(enrichplot)
+library(ReactomePA)
+
+log1<-c(topAnnotated_FEMvsMALE.AD$logFC[abs(topAnnotated_FEMvsMALE.AD$adj.P.Val<0.05) & abs(topAnnotated_FEMvsMALE.AD$logFC<(-1))])
+log2<-c(topAnnotated_FEMvsMALE.AD$logFC[abs(topAnnotated_FEMvsMALE.AD$adj.P.Val<0.05) &abs(topAnnotated_FEMvsMALE.AD$logFC>1)])
+
+filt1<-c(topAnnotated_FEMvsMALE.AD$ENTREZ[abs(topAnnotated_FEMvsMALE.AD$adj.P.Val<0.05) & abs(topAnnotated_FEMvsMALE.AD$logFC<(-1))])
+filt2<-c(topAnnotated_FEMvsMALE.AD$ENTREZ[abs(topAnnotated_FEMvsMALE.AD$adj.P.Val<0.05) &abs(topAnnotated_FEMvsMALE.AD$logFC>1)])
+
+genelist2 <- c(log1,log2)
+gene2 <- c(filt1,filt2)
+
+## BP: Biological Process
+ggo <- groupGO(gene     = gene2,
+               OrgDb    = org.Hs.eg.db,
+               ont      = "BP",
+               level=3,
+               readable = TRUE)
+head(ggo)
+barplot(ggo, showCategory=20)
+```
+
+
+# ANÁLISIS DE PATHWAYS
+
+```{r}
+genelist <- topAnnotated_FEMvsMALE.AD[,9]
+names (genelist)<- as.character(topAnnotated_FEMvsMALE.AD[,4])
+genelist <- sort (genelist, decreasing = T)
+gene <- names(genelist)[abs(genelist)<0.05]
+```
+
+- KEGG
+
+```{r}
+kk <- enrichKEGG(gene         = gene,
+                 universe=genelist,
+                 organism     = 'hsa',
+                 pvalueCutoff = 0.1)
+head(kk)
+kkx <- setReadable(kk, 'hgu133plus2.db', 'ENTREZID')
+cnetplot(kkx, categorySize="pvalue", foldChange=genelist, node_label="all", cex_label_category=0.75,cex_label_gene=0.75)
+```
+
+- REACTOMEPA
+
+```{r}
+x <- enrichPathway(gene, universe=genelist, pvalueCutoff = 0.1, readable=TRUE)
+barplot(x, showCategory=20)
+
+
+cnetplot(x, categorySize="pvalue", foldChange=genelist, node_label="all", cex_label_category=0.75,cex_label_gene=0.75)
+
+emapplot(pairwise_termsim(x), cex_label_category=0.75)
+```
+
+
+# LISTADO FINAL DE LOS 5 GENES MÁS REPRESENTATIVOS 
+
+```{r}
+dge1<-(topAnnotated_FEMvsMALE.AD[abs(topAnnotated_FEMvsMALE.AD$adj.P.Val<0.05) & abs(topAnnotated_FEMvsMALE.AD$logFC<(-1)),])
+dge2<-(topAnnotated_FEMvsMALE.AD[abs(topAnnotated_FEMvsMALE.AD$adj.P.Val<0.05) &abs(topAnnotated_FEMvsMALE.AD$logFC>1),])
+
+
+dge <- rbind(dge1,dge2)
+dge<-dge[order(abs(dge$adj.P.Val)), ]
+knitr::kable(head(dge[,1:3],5))
+```
+
